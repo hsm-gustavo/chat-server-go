@@ -1,0 +1,66 @@
+# Chat Server com Go
+
+## Básicos
+
+- Objetivo: Aprender a configurar um servidor TCP simples que manipula um cliente.
+
+O que é um servidor TCP?
+
+Primeiramente, TCP (Transmission Control Protocol) é um protocolo de comunicação que permite a transmissão de dados entre dispositivos em uma rede. Um servidor TCP é um programa que escuta por conexões de clientes em uma porta específica e estabelece uma comunicação bidirecional com esses clientes.
+
+Para criar um servidor TCP em Go, vamos utilizar o pacote `net`. Da documentação do pacote `net`, podemos extrair essa descrição: "Package net provides a portable interface for network I/O, including TCP/IP, UDP, domain name resolution, and Unix domain sockets."
+
+Com isso em mente, vamos ao código.
+
+Iniciamos criando um simples servidor TCP
+
+```go
+// a função Listen cria um servidor
+ln, err := net.Listen("tcp", ":8080")
+if err!=nil{
+    fmt.Println("There was an error trying to create a TCP server: ", err)
+    return
+}
+defer ln.Close()
+```
+
+`defer ln.Close()`: Isso garante que o servidor será fechado corretamente quando a função principal terminar sua execução.
+
+Depois, precisamos aceitar conexões de clientes. Vamos começar com uma única conexão
+
+```go
+conn, err := ln.Accept()
+if err!=nil{
+    fmt.Println("There was an error trying to accept connections in the server: ", err)
+    return
+}
+defer conn.Close()
+
+fmt.Println("Client connected:", conn.RemoteAddr())
+```
+
+`ln.Accept()`: Esta função **bloqueia** até que um cliente se conecte ao servidor. Quando um cliente se conecta, ela retorna um objeto `net.Conn`, que representa a conexão com o cliente. Também retorna um erro, que deve ser tratado adequadamente.
+`defer conn.Close()`: Isso garante que a conexão com o cliente será fechada corretamente quando a função principal terminar sua execução.
+
+Agora vamos permitir que o cliente envie uma mensagem para o servidor
+
+```go
+status, err := bufio.NewReader(conn).ReadString('\n')
+if err!=nil{
+    fmt.Println("Error reading from client:", err)
+    return
+}
+
+fmt.Println("Message received:", status)
+```
+
+`bufio.NewReader(conn).ReadString('\n')`: Esta linha cria um novo leitor de buffer para a conexão e lê uma string até encontrar um caractere de nova linha (`\n`). Isso é útil para ler mensagens delimitadas por novas linhas.
+`status`: Esta variável armazena a mensagem recebida do cliente.
+
+Com o servidor pronto, já podemos colocá-lo em execução. É importante lembrar que ele funciona apenas como servidor: para enviar mensagens, precisamos de um cliente que se conecte a ele.
+Para testar, abra dois terminais:
+
+- no primeiro, rode o servidor;
+- no segundo, conecte-se a ele com o comando `nc localhost 8080`.
+
+Esse comando estabelece a conexão com o servidor e mantém o terminal aguardando até que uma mensagem seja digitada. Assim que o cliente enviar algo, o servidor exibirá a mensagem no seu próprio terminal
