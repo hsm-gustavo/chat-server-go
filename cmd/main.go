@@ -1,13 +1,15 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"net"
+
+	"github.com/hsm-gustavo/chat-server-go/internal/client"
 )
 
 func main() {
-	// a função Listen cria um servidor
+	var clients []net.Conn
+
 	ln, err := net.Listen("tcp", ":8080")
 	if err!=nil{
 		fmt.Println("There was an error trying to create a TCP server: ", err)
@@ -17,21 +19,18 @@ func main() {
 
 	fmt.Println("Server is listening on port 8080")
 
-	conn, err := ln.Accept()
-	if err!=nil{
-		fmt.Println("There was an error trying to accept connections in the server: ", err)
-		return
-	}
-	defer conn.Close()
+	for {
+		conn, err := ln.Accept()
+		if err!=nil{
+			fmt.Println("There was an error trying to accept connections in the server: ", err)
+			return
+		}
 
-	fmt.Println("Client connected:", conn.RemoteAddr())
-	
-	status, err := bufio.NewReader(conn).ReadString('\n')
-	if err!=nil{
-		fmt.Println("Error reading from client:", err)
-		return
-	}
+		clients = append(clients, conn)
 
-	fmt.Println("Message received:", status)
+		fmt.Println("Client connected:", conn.RemoteAddr())
+
+		go client.HandleClient(conn, &clients)
+	}
 		
 }

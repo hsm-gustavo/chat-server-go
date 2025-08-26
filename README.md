@@ -64,3 +64,56 @@ Para testar, abra dois terminais:
 - no segundo, conecte-se a ele com o comando `nc localhost 8080`.
 
 Esse comando estabelece a conexão com o servidor e mantém o terminal aguardando até que uma mensagem seja digitada. Assim que o cliente enviar algo, o servidor exibirá a mensagem no seu próprio terminal
+
+## Múltiplos clientes
+
+- Objetivo: Permitir que múltiplos clientes se conectem e se comuniquem com o servidor simultaneamente.
+
+Para permitir que múltiplos clientes se conectem ao servidor simultaneamente, precisamos modificar o código para aceitar conexões em um loop infinito e lidar com cada conexão em uma goroutine separada. Isso permite que o servidor continue aceitando novas conexões enquanto processa as mensagens dos clientes existentes.
+
+```go
+for {
+    conn, err := ln.Accept()
+    if err!=nil{
+        fmt.Println("There was an error trying to accept connections in the server: ", err)
+        return
+    }
+
+    clients = append(clients, conn)
+
+    fmt.Println("Client connected:", conn.RemoteAddr())
+
+    go client.HandleClient(conn, &clients)
+}
+```
+
+E em `internal/client/client.go`:
+
+```go
+func HandleClient(conn net.Conn, clients *[]net.Conn) {
+	defer conn.Close()
+
+	fmt.Fprintf(conn, "Hello, you are connected to %s\n", conn.LocalAddr())
+
+	for {
+		status, err := bufio.NewReader(conn).ReadString('\n')
+
+		if err!=nil{
+			fmt.Println("Error reading from client:", err)
+			return
+		}
+
+		// broadcast to all
+		for _, client := range *clients {
+			if client != conn {
+				fmt.Fprintf(client, "Connection %s said: %s\n", conn.RemoteAddr(), status)
+			}
+		}
+
+		fmt.Fprintf(os.Stdin, "Message received: %s from %s\n", status, conn.RemoteAddr())
+	}
+}
+```
+
+Note que envolvendo a seção do Reader temos um `for` que permite ler mensagens continuamente até que a conexão seja fechada.
+E agora, já que temos múltiplos clientes, precisamos garantir que as mensagens sejam enviadas para todos os clientes conectados. Isso já está sendo feito na função `HandleClient`, onde usamos um loop para enviar a mensagem recebida para todos os outros clientes no slice de conexões.
