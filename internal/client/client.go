@@ -5,39 +5,70 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"strings"
+	"sync"
+
+	"github.com/google/uuid"
 )
 
-func HandleClient(conn net.Conn, clients *[]net.Conn) {
-	defer conn.Close()
+type Client struct {
+	Name 	string
+	Conn 	net.Conn
+	Open	bool
+}
 
-	fmt.Fprintf(conn, "Hello, you are connected to %s\n", conn.LocalAddr())
+func HandleClient(m *sync.Mutex, clients map[uuid.UUID]Client, clientId uuid.UUID, broadcast chan string) {
+	currentClient := clients[clientId]
+
+	defer func() {
+		m.Lock()
+		delete(clients, clientId) // from map, delete key
+		m.Unlock()
+		currentClient.Conn.Close()
+	}()
+
+	reader := bufio.NewReader(currentClient.Conn)
+
+	name, err := reader.ReadString('\n')
+
+	if err!=nil{
+		if err == io.EOF {
+			fmt.Printf("Client %s exited\n", currentClient.Conn.RemoteAddr())
+			return
+		}
+		fmt.Println("Error reading from client:", err)
+		return
+	}
+
+	// trimming to avoid leading whitespace
+	currentClient.Name = strings.TrimSpace(name)
+	
+	m.Lock()
+	clients[clientId] = currentClient // updating client with name
+	m.Unlock()
+
+	fmt.Fprintf(currentClient.Conn, "Hello, you are connected to %s\n", currentClient.Conn.LocalAddr())
+	
+	// sends a message to all clients that someone connected
+	broadcast <- fmt.Sprintf(">>> %s entrou no chat\n", currentClient.Name)
 
 	for {
-		status, err := bufio.NewReader(conn).ReadString('\n')
+		message, err := reader.ReadString('\n')
 
 		if err!=nil{
 			if err == io.EOF {
-				fmt.Printf("Client %s exited\n", conn.RemoteAddr())
+				fmt.Printf("Client %s exited\n", currentClient.Conn.RemoteAddr())
+				broadcast <- fmt.Sprintf(">>> %s saiu do chat\n", currentClient.Name)
 				return
 			}
 			fmt.Println("Error reading from client:", err)
 			return
 		}
 
-		cleanedMsg := strings.ReplaceAll(status, "\n","")
+		cleanedMsg := strings.TrimSpace(message)
 		// broadcast to all
-		broadcastMessage(clients, conn, cleanedMsg)
+		broadcast <- fmt.Sprintf("[%s]: %s\n", currentClient.Name, cleanedMsg)
 
-		fmt.Fprintf(os.Stdin, "Message received: %s from %s\n", status, conn.RemoteAddr())
-	}
-}
-
-func broadcastMessage(clients *[]net.Conn, currentConn net.Conn, message string) {
-	for _, client := range *clients {
-		if client != currentConn {
-			fmt.Fprintf(client, "Connection %s said: %s\n", currentConn.RemoteAddr(), message)
-		}
+		fmt.Printf("Message received: %s from %s\n", cleanedMsg, currentClient.Conn.RemoteAddr())
 	}
 }

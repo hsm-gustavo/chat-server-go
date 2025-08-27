@@ -117,3 +117,66 @@ func HandleClient(conn net.Conn, clients *[]net.Conn) {
 
 Note que envolvendo a seção do Reader temos um `for` que permite ler mensagens continuamente até que a conexão seja fechada.
 E agora, já que temos múltiplos clientes, precisamos garantir que as mensagens sejam enviadas para todos os clientes conectados. Isso já está sendo feito na função `HandleClient`, onde usamos um loop para enviar a mensagem recebida para todos os outros clientes no slice de conexões.
+
+## Transmissão de Mensagens
+
+- Objetivo: Implementar um sistema de broadcast de mensagens usando channels em Go para melhor gerenciamento de concorrência.
+
+Para implementar um sistema de broadcast eficiente, vamos usar um channel em Go, que é a forma idiomática de comunicação entre goroutines.
+
+> Channels são um mecanismo de comunicação que permite que goroutines troquem dados de forma segura e sincronizada.
+
+```go
+// No arquivo cmd/server/main.go
+var (
+    clients   = make(map[uuid.UUID]client.Client) // clientes conectados
+    broadcast = make(chan string)                 // canal para mensagens
+    m         sync.Mutex                          // protege o mapa de clientes
+)
+```
+
+A função `handleBroadcast` é executada em uma goroutine separada e é responsável por receber mensagens do canal e enviá-las para todos os clientes conectados:
+
+```go
+// handleBroadcast gerencia o envio de mensagens para todos os clientes
+func handleBroadcast() {
+    for {
+        // Espera por mensagens no canal broadcast
+        message := <-broadcast
+
+        // Envia a mensagem para todos os clientes conectados
+        m.Lock()
+        for _, client := range clients {
+            if client.Open {
+                _, err := fmt.Fprint(client.Conn, message)
+                if err != nil {
+                    client.Open = false
+                    client.Conn.Close()
+                }
+            }
+        }
+        m.Unlock()
+    }
+}
+```
+
+Quando um cliente envia uma mensagem, a função `HandleClient` a coloca no canal de broadcast:
+
+```go
+// No arquivo client.go
+broadcast <- fmt.Sprintf("[%s]: %s\n", currentClient.Name, cleanedMsg)
+```
+
+Esta implementação tem várias vantagens:
+
+1. **Concorrência segura**: O uso do mutex garante que não haja condições de corrida no acesso ao mapa de clientes.
+2. **Eficiência**: O channel permite que a goroutine de broadcast processe mensagens quando elas estão disponíveis.
+3. **Desacoplamento**: A lógica de processamento de mensagens está separada da lógica de comunicação com o cliente.
+
+Para testar o sistema de broadcast, conecte vários clientes ao servidor usando telnet ou netcat:
+
+```bash
+nc localhost 8080
+```
+
+O primeiro texto enviado será considerado o nome do usuário, e todas as mensagens subsequentes serão transmitidas a todos os usuários conectados, com o formato `[Nome]: Mensagem`.
